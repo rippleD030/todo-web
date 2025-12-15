@@ -9,27 +9,46 @@
   <main class="container">
     <h1>TODO List</h1>
 
+    <!-- 添加任务表单 -->
     <section class="todo-form">
-      <input id="todo-title" type="text" placeholder="输入待办标题（必填）" />
-      <input id="todo-desc" type="text" placeholder="描述（可选）" />
+      <input
+        id="todo-title"
+        type="text"
+        placeholder="输入待办标题（必填）"
+      />
+      <input
+        id="todo-desc"
+        type="text"
+        placeholder="描述（可选）"
+      />
+      <!-- 新增：到期日期 -->
+      <input
+        id="todo-due-date"
+        type="date"
+      />
+      <!-- 分类下拉，选项由 JS 根据 categories 动态渲染 -->
       <select id="todo-category">
-        <option value="work">工作</option>
-        <option value="study">学习</option>
-        <option value="life">生活</option>
+        <!-- 选项将由 JavaScript 注入 -->
       </select>
       <button id="add-btn">添加</button>
     </section>
 
+    <!-- 工具栏：搜索 + 分类筛选 + 分类管理 -->
     <section class="toolbar">
-      <input id="search-input" type="text" placeholder="搜索标题关键字" />
+      <input
+        id="search-input"
+        type="text"
+        placeholder="搜索标题关键字"
+      />
+      <!-- 分类筛选下拉，选项由 JS 动态渲染（包含“全部分类”） -->
       <select id="filter-category">
-        <option value="all">全部分类</option>
-        <option value="work">工作</option>
-        <option value="study">学习</option>
-        <option value="life">生活</option>
+        <!-- 选项将由 JavaScript 注入 -->
       </select>
+      <button id="add-category-btn" type="button">新增分类</button>
+      <button id="delete-category-btn" type="button">删除当前分类</button>
     </section>
 
+    <!-- 待办列表 -->
     <section>
       <ul id="todo-list">
         <!-- 待办项将由 JS 注入 -->
