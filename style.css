@@ -30,7 +30,14 @@ body {
 }
 
 /* 表单 & 工具栏布局 */
-.todo-form,
+.todo-form {
+  display: flex;
+  flex-wrap: nowrap;      /* 一行展示，不换行 */
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
 .toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -40,6 +47,7 @@ body {
 
 /* 输入框和下拉框样式 */
 input[type="text"],
+input[type="date"],
 select {
   padding: 8px 10px;
   border-radius: 6px;
@@ -50,12 +58,14 @@ select {
 }
 
 input[type="text"]:focus,
+input[type="date"]:focus,
 select:focus {
   border-color: #2563eb;
   box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.1);
 }
 
 /* 表单区域的宽度控制 */
+/* 标题和描述占主要空间，可被压缩 */
 #todo-title {
   flex: 2 1 180px;
 }
@@ -64,6 +74,15 @@ select:focus {
   flex: 2 1 180px;
 }
 
+/* 日期输入：固定宽度，不换行，超出省略 */
+#todo-due-date {
+  flex: 0 0 150px;      /* 固定宽度，避免切换 type 时抖动 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 分类与按钮不伸长，只占自身宽度 */
 #todo-category {
   flex: 0 0 120px;
 }
@@ -164,7 +183,7 @@ button {
   background-color: #f9fafb;
 }
 
-/* 描述 */
+/* 描述和日期行 */
 .todo-desc {
   font-size: 13px;
   color: #6b7280;
@@ -215,10 +234,12 @@ button {
   .todo-form,
   .toolbar {
     flex-direction: column;
+    flex-wrap: nowrap;
   }
 
   #todo-title,
   #todo-desc,
+  #todo-due-date,
   #todo-category,
   #search-input,
   #filter-category,

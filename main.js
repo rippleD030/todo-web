@@ -2,6 +2,9 @@
 let todos = [];
 let categories = [];
 
+// 新建任务当前选中的日期（null 表示未选择任务日期）
+let newTodoDueDate = null;
+
 // localStorage 使用的 key（沿用原来的，兼容老数据）
 const STORAGE_KEY = "todos-app-data";
 
@@ -328,6 +331,11 @@ function renderTodos() {
     categoryTag.className = "todo-category-tag";
     categoryTag.textContent = getCategoryNameById(todo.categoryId);
 
+    // 点击分类标签，用下拉框修改分类
+    categoryTag.addEventListener("click", (event) => {
+      editTodoCategory(todo.id, event.currentTarget);
+    });
+
     titleLine.appendChild(titleSpan);
     titleLine.appendChild(categoryTag);
     textWrapper.appendChild(titleLine);
@@ -339,12 +347,18 @@ function renderTodos() {
       textWrapper.appendChild(descSpan);
     }
 
-    if (todo.dueDate) {
-      const dueSpan = document.createElement("div");
-      dueSpan.className = "todo-desc";
-      dueSpan.textContent = `任务日期：${todo.dueDate}`;
-      textWrapper.appendChild(dueSpan);
-    }
+    // 任务日期：平时只显示一行文本，编辑时再出现“清除”等控件
+    const dueSpan = document.createElement("div");
+    dueSpan.className = "todo-desc todo-due";
+    const dueText = todo.dueDate || "未选择任务日期";
+    dueSpan.textContent = `任务日期：${dueText}`;
+
+    // 点击日期文本，进入编辑态（日期选择 + 清除按钮）
+    dueSpan.addEventListener("click", () => {
+      editTodoDueDate(todo.id, dueSpan);
+    });
+
+    textWrapper.appendChild(dueSpan);
 
     if (todo.completed) {
       li.classList.add("todo-completed");
@@ -372,7 +386,7 @@ function addTodo() {
   const title = titleInput.value.trim();
   const description = descInput.value.trim();
   const categoryId = categorySelect.value;
-  const dueDate = dueDateInput ? dueDateInput.value : "";
+  const dueDate = newTodoDueDate || "";
 
   if (!title) {
     alert("标题不能为空");
@@ -390,9 +404,8 @@ function addTodo() {
 
   titleInput.value = "";
   descInput.value = "";
-  if (dueDateInput) {
-    dueDateInput.value = "";
-  }
+  newTodoDueDate = null;
+  updateCreateDueDateDisplay();
 
   saveToStorage();
   renderTodos();
@@ -400,7 +413,6 @@ function addTodo() {
 
 /**
  * 删除单个待办
- * 如果该分类下任务被删空，则自动删除该分类
  */
 function deleteTodo(id) {
   const target = todos.find((todo) => todo.id === id);
@@ -412,7 +424,6 @@ function deleteTodo(id) {
   todos = todos.filter((todo) => todo.id !== id);
 
   saveToStorage();
-  renderCategorySelects();
   renderTodos();
 }
 
@@ -465,6 +476,115 @@ function toggleTodo(id) {
 }
 
 /**
+ * 修改任务分类：点击分类标签触发，下拉框选择
+ */
+function editTodoCategory(id, anchorEl) {
+  const todo = todos.find((t) => t.id === id);
+  if (!todo) return;
+
+  if (!categories.length) {
+    alert("当前没有可用的分类，请先创建分类");
+    return;
+  }
+
+  // 创建一个临时下拉框
+  const select = document.createElement("select");
+  categories.forEach((cat) => {
+    const option = document.createElement("option");
+    option.value = String(cat.id);
+    option.textContent = cat.name;
+    select.appendChild(option);
+  });
+
+  select.value = String(todo.categoryId);
+
+  // 用下拉框临时替换原来的分类标签
+  anchorEl.replaceWith(select);
+  select.focus();
+
+  const applyChange = () => {
+    const newCategoryId = select.value;
+    todos = todos.map((t) =>
+      t.id === id ? { ...t, categoryId: newCategoryId } : t
+    );
+    saveToStorage();
+    renderTodos();
+  };
+
+  select.addEventListener("change", applyChange);
+  // 用户切换焦点但没改也要恢复渲染
+  select.addEventListener("blur", () => {
+    renderTodos();
+  });
+}
+
+/**
+ * 修改任务日期：点击日期文本触发
+ * 弹出“小编辑区”：日期选择器 + 清除按钮
+ */
+function editTodoDueDate(id, anchorEl) {
+  const todo = todos.find((t) => t.id === id);
+  if (!todo) return;
+
+  // 容器，代替原来的文本 div
+  const wrapper = document.createElement("span");
+  wrapper.className = "todo-date-editor";
+
+  const input = document.createElement("input");
+  input.type = "date";
+  input.value = todo.dueDate || "";
+
+  const okBtn = document.createElement("button");
+  okBtn.type = "button";
+  okBtn.textContent = "确定";
+  okBtn.className = "todo-date-ok-btn";
+
+  const clearBtn = document.createElement("button");
+  clearBtn.type = "button";
+  clearBtn.textContent = "清除";
+  clearBtn.className = "todo-date-clear-btn";
+
+  wrapper.appendChild(input);
+  wrapper.appendChild(okBtn);
+  wrapper.appendChild(clearBtn);
+
+  // 用编辑区域替换掉原来的“任务日期：xxx”文本
+  anchorEl.replaceWith(wrapper);
+  input.focus();
+
+  // 点击“确定”：按当前 input 的值保存（为空则视为未选择）
+  const handleOk = () => {
+    const newValue = input.value.trim();
+    todos = todos.map((t) =>
+      t.id === id ? { ...t, dueDate: newValue || null } : t
+    );
+    saveToStorage();
+    renderTodos();
+  };
+
+  // 点击“清除”：直接将日期清空为 null
+  const handleClear = () => {
+    todos = todos.map((t) =>
+      t.id === id ? { ...t, dueDate: null } : t
+    );
+    saveToStorage();
+    renderTodos();
+  };
+
+  okBtn.addEventListener("click", handleOk);
+  clearBtn.addEventListener("click", handleClear);
+
+  // 回车等于“确定”，Esc 等于“放弃修改”
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      handleOk();
+    } else if (e.key === "Escape") {
+      renderTodos();
+    }
+  });
+}
+
+/**
  * 新增分类
  */
 function handleAddCategory() {
@@ -481,9 +601,6 @@ function handleAddCategory() {
   renderCategorySelects();
 }
 
-/**
- * 删除当前选中的分类（通过过滤下拉或添加表单的分类选择）
- */
 /**
  * 删除当前选中的分类（通过过滤下拉或添加表单的分类选择）
  */
@@ -519,7 +636,6 @@ function handleDeleteCurrentCategory() {
   // 都没有的话，就提示没有可删除的分类
   alert("当前没有可删除的分类");
 }
-
 
 /**
  * 拖拽开始
@@ -596,6 +712,74 @@ function reorderTodos(sourceId, targetId) {
 }
 
 /**
+ * 更新创建任务区域的日期显示：根据 newTodoDueDate
+ */
+function updateCreateDueDateDisplay() {
+  if (!dueDateInput) return;
+  const text = newTodoDueDate || "未选择任务日期";
+  dueDateInput.value = text;
+}
+
+/**
+ * 打开创建任务区域的日期编辑面板
+ */
+function openCreateDueDateEditor() {
+  if (!dueDateInput) return;
+
+  const wrapper = document.createElement("span");
+  wrapper.className = "todo-date-editor";
+
+  const input = document.createElement("input");
+  input.type = "date";
+  input.value = newTodoDueDate || "";
+
+  const okBtn = document.createElement("button");
+  okBtn.type = "button";
+  okBtn.textContent = "确定";
+  okBtn.className = "todo-date-ok-btn";
+
+  const clearBtn = document.createElement("button");
+  clearBtn.type = "button";
+  clearBtn.textContent = "清除";
+  clearBtn.className = "todo-date-clear-btn";
+
+  wrapper.appendChild(input);
+  wrapper.appendChild(okBtn);
+  wrapper.appendChild(clearBtn);
+
+  // 用编辑区域替换掉原来的输入框
+  dueDateInput.replaceWith(wrapper);
+  input.focus();
+
+  const finish = () => {
+    wrapper.replaceWith(dueDateInput);
+    updateCreateDueDateDisplay();
+  };
+
+  const handleOk = () => {
+    const v = input.value.trim();
+    newTodoDueDate = v || null;
+    finish();
+  };
+
+  const handleClear = () => {
+    newTodoDueDate = null;
+    finish();
+  };
+
+  okBtn.addEventListener("click", handleOk);
+  clearBtn.addEventListener("click", handleClear);
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      handleOk();
+    } else if (e.key === "Escape") {
+      finish(); // 放弃修改，恢复原显示
+    }
+  });
+}
+
+/**
  * 初始化事件绑定
  */
 function bindEvents() {
@@ -620,6 +804,13 @@ function bindEvents() {
   }
   if (deleteCategoryBtn) {
     deleteCategoryBtn.addEventListener("click", handleDeleteCurrentCategory);
+  }
+
+  // 创建任务区域的日期输入：作为“显示控件”，点击弹出编辑面板
+  if (dueDateInput) {
+    dueDateInput.readOnly = true; // 不手动输入，只通过面板选择
+    updateCreateDueDateDisplay();
+    dueDateInput.addEventListener("click", openCreateDueDateEditor);
   }
 }
 
