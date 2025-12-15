@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>TODO List</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="container">
+    <h1>TODO List</h1>
+
+    <section class="todo-form">
+      <input id="todo-title" type="text" placeholder="输入待办标题（必填）" />
+      <input id="todo-desc" type="text" placeholder="描述（可选）" />
+      <select id="todo-category">
+        <option value="work">工作</option>
+        <option value="study">学习</option>
+        <option value="life">生活</option>
+      </select>
+      <button id="add-btn">添加</button>
+    </section>
+
+    <section class="toolbar">
+      <input id="search-input" type="text" placeholder="搜索标题关键字" />
+      <select id="filter-category">
+        <option value="all">全部分类</option>
+        <option value="work">工作</option>
+        <option value="study">学习</option>
+        <option value="life">生活</option>
+      </select>
+    </section>
+
+    <section>
+      <ul id="todo-list">
+        <!-- 待办项将由 JS 注入 -->
+      </ul>
+    </section>
+  </main>
+
+  <script src="main.js"></script>
+</body>
+</html>
