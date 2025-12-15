@@ -250,6 +250,15 @@ button {
   background-color: #f9fafb;
 }
 
+/* 过期未完成任务高亮 */
+.todo-overdue {
+  border-left: 3px solid #ef4444;
+  background-color: #fff7ed;
+}
+.todo-overdue .todo-due {
+  color: #dc2626;
+}
+
 /* 响应式：窄屏时让布局更竖直一点 */
 @media (max-width: 600px) {
   .container {
@@ -281,4 +290,48 @@ button {
   .todo-delete-btn {
     margin-left: 0;
   }
+}
+
+/* 统计视图样式 */
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.tab-button {
+  padding: 6px 10px;
+  border: 1px solid #d0d7de;
+  background: #fff;
+}
+.tab-active {
+  background: #f3f4f6;
+}
+.stats-section {
+  margin-top: 12px;
+}
+.stats-subtitle {
+  color: #6b7280;
+  font-size: 13px;
+}
+#today-pie-chart {
+  width: 220px;
+  height: 220px;
+  display: block;
+  margin: 8px auto 0;
+}
+#last7-line-chart {
+  max-width: 640px;
+  height: 260px;
+  display: block;
+  margin: 8px auto 0;
+}
+.stats-empty {
+  margin: 8px auto 0;
+  padding: 12px 14px;
+  max-width: 360px;
+  text-align: center;
+  color: #6b7280;
+  background: #f9fafb;
+  border: 1px dashed #e5e7eb;
+  border-radius: 8px;
 }

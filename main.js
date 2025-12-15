@@ -21,6 +21,7 @@ const todoList = document.getElementById("todo-list");
 const searchInput = document.getElementById("search-input");
 const filterCategory = document.getElementById("filter-category");
 const dueDateInput = document.getElementById("todo-due-date");
+const showArchived = document.getElementById("show-archived");
 
 // 分类管理按钮
 const addCategoryBtn = document.getElementById("add-category-btn");
@@ -89,7 +90,9 @@ function createTodo(title, description, categoryId, dueDate) {
     completed: false,
     createdAt: new Date().toISOString(),
     completedAt: null, // 完成日期（YYYY-MM-DD），未完成为 null
-    order: maxOrder + 1 // 用于排序
+    order: maxOrder + 1, // 用于排序
+    archived: false,
+    archivedAt: null
   };
 }
 
@@ -113,19 +116,21 @@ function loadFromStorage() {
     // 老版本：直接存数组
     if (Array.isArray(parsed)) {
       categories = createDefaultCategories();
-      todos = parsed.map((t, idx) => ({
-        id: t.id || Date.now() + idx,
-        title: t.title,
-        description: t.description || "",
-        categoryId: legacyCategoryToId(t.category),
-        completed: !!t.completed,
-        createdAt: t.createdAt || new Date().toISOString(),
-        dueDate: t.dueDate || null,
-        completedAt: t.completedAt || null,
-        order: typeof t.order === "number" ? t.order : idx + 1
-      }));
-      return;
-    }
+    todos = parsed.map((t, idx) => ({
+      id: t.id || Date.now() + idx,
+      title: t.title,
+      description: t.description || "",
+      categoryId: legacyCategoryToId(t.category),
+      completed: !!t.completed,
+      createdAt: t.createdAt || new Date().toISOString(),
+      dueDate: t.dueDate || null,
+      completedAt: t.completedAt || null,
+      order: typeof t.order === "number" ? t.order : idx + 1,
+      archived: !!t.archived,
+      archivedAt: t.archivedAt || null
+    }));
+    return;
+  }
 
     // 新版本：对象结构
     todos = Array.isArray(parsed.todos) ? parsed.todos : [];
@@ -137,17 +142,19 @@ function loadFromStorage() {
     if (!categories.length) {
       categories = createDefaultCategories();
     }
-    todos = todos.map((t, idx) => ({
-      id: t.id || Date.now() + idx,
-      title: t.title || "",
-      description: t.description || "",
-      categoryId: t.categoryId || legacyCategoryToId(t.category),
-      completed: !!t.completed,
-      createdAt: t.createdAt || new Date().toISOString(),
-      dueDate: t.dueDate || null,
-      completedAt: t.completedAt || null,
-      order: typeof t.order === "number" ? t.order : idx + 1
-    }));
+  todos = todos.map((t, idx) => ({
+    id: t.id || Date.now() + idx,
+    title: t.title || "",
+    description: t.description || "",
+    categoryId: t.categoryId || legacyCategoryToId(t.category),
+    completed: !!t.completed,
+    createdAt: t.createdAt || new Date().toISOString(),
+    dueDate: t.dueDate || null,
+    completedAt: t.completedAt || null,
+    order: typeof t.order === "number" ? t.order : idx + 1,
+    archived: !!t.archived,
+    archivedAt: t.archivedAt || null
+  }));
   } catch (error) {
     console.error("Failed to parse state from storage", error);
     todos = [];
@@ -179,6 +186,10 @@ function getVisibleTodos() {
   const todayStr = getTodayDateString();
 
   let result = todos.filter((todo) => {
+    // 归档过滤：默认不显示归档，勾选显示归档则全部显示
+    if (showArchived && !showArchived.checked && todo.archived) {
+      return false;
+    }
     const matchKeyword =
       !keyword ||
       (todo.title && todo.title.toLowerCase().includes(keyword)) ||
@@ -405,6 +416,14 @@ function renderTodos() {
     if (todo.completed) {
       li.classList.add("todo-completed");
     }
+    const todayStr = getTodayDateString();
+    const isOverdue =
+      !todo.completed &&
+      todo.dueDate &&
+      todo.dueDate < todayStr;
+    if (isOverdue) {
+      li.classList.add("todo-overdue");
+    }
 
     const deleteBtn = document.createElement("button");
     deleteBtn.className = "todo-delete-btn";
@@ -413,8 +432,16 @@ function renderTodos() {
       deleteTodo(todo.id);
     });
 
+    const archiveBtn = document.createElement("button");
+    archiveBtn.className = "todo-delete-btn";
+    archiveBtn.textContent = todo.archived ? "取消归档" : "归档";
+    archiveBtn.addEventListener("click", () => {
+      toggleArchive(todo.id);
+    });
+
     li.appendChild(checkbox);
     li.appendChild(textWrapper);
+    li.appendChild(archiveBtn);
     li.appendChild(deleteBtn);
 
     todoList.appendChild(li);
@@ -517,6 +544,22 @@ function toggleTodo(id) {
       ...todo,
       completed: nextCompleted,
       completedAt: nextCompleted ? todayStr : null
+    };
+  });
+  saveToStorage();
+  renderTodos();
+  updateTodayDoneText();
+  renderStats();
+}
+
+function toggleArchive(id) {
+  todos = todos.map((todo) => {
+    if (todo.id !== id) return todo;
+    const nextArchived = !todo.archived;
+    return {
+      ...todo,
+      archived: nextArchived,
+      archivedAt: nextArchived ? new Date().toISOString() : null
     };
   });
   saveToStorage();
@@ -848,28 +891,33 @@ function renderStats() {
   if (last7LineChart) last7LineChart.destroy();
 
   // 今日完成饼图
-  todayPieChart = new Chart(todayCtx, {
-    type: "pie",
-    data: {
-      labels: todayStats.labels.length ? todayStats.labels : ["无数据"],
-      datasets: [
-        {
-          data: todayStats.data.length ? todayStats.data : [1]
-        }
-      ]
-    },
-    options: {
-      plugins: {
-        legend: {
-          position: "bottom"
-        },
-        title: {
-          display: todayStats.labels.length === 0,
-          text: "今日没有完成任何任务"
+  const todayEmptyEl = document.getElementById("today-empty");
+  if (todayStats.data.length === 0) {
+    todayPieCanvas.style.display = "none";
+    if (todayEmptyEl) todayEmptyEl.style.display = "";
+  } else {
+    todayPieCanvas.style.display = "";
+    if (todayEmptyEl) todayEmptyEl.style.display = "none";
+    todayPieChart = new Chart(todayCtx, {
+      type: "pie",
+      data: {
+        labels: todayStats.labels,
+        datasets: [
+          {
+            data: todayStats.data
+          }
+        ]
+      },
+      options: {
+        maintainAspectRatio: true,
+        plugins: {
+          legend: {
+            position: "bottom"
+          }
         }
       }
-    }
-  });
+    });
+  }
 
   // 近 7 天折线图
   last7LineChart = new Chart(last7Ctx, {
@@ -886,6 +934,11 @@ function renderStats() {
       ]
     },
     options: {
+      plugins: {
+        legend: {
+          display: false
+        }
+      },
       scales: {
         y: {
           beginAtZero: true,
@@ -896,6 +949,33 @@ function renderStats() {
       }
     }
   });
+
+  // 更新折线图副标题：今日 vs 前七日平均
+  const last7Subtitle = document.getElementById("last7-subtitle");
+  if (last7Subtitle) {
+    const todayStr = getTodayDateString();
+    const todayCount = todos.filter(
+      (t) => t.completed && t.completedAt === todayStr
+    ).length;
+    let sum = 0;
+    for (let i = 1; i <= 7; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      const dateStr = `${yyyy}-${mm}-${dd}`;
+      const cnt = todos.filter(
+        (t) => t.completed && t.completedAt === dateStr
+      ).length;
+      sum += cnt;
+    }
+    const avg = Number((sum / 7).toFixed(2));
+    const diff = Number((todayCount - avg).toFixed(2));
+    const trend = diff > 0 ? "增加" : diff < 0 ? "下降" : "持平";
+    const absDiff = Math.abs(diff);
+    last7Subtitle.textContent = `今日完成 ${todayCount} 个，对比前七日平均 ${avg} 个，${trend} ${absDiff}`;
+  }
 }
 
 /**
@@ -955,6 +1035,12 @@ function bindEvents() {
     dueDateInput.readOnly = true; // 不手动输入，只通过面板选择
     updateCreateDueDateDisplay();
     dueDateInput.addEventListener("click", openCreateDueDateEditor);
+  }
+
+  if (showArchived) {
+    showArchived.addEventListener("change", () => {
+      renderTodos();
+    });
   }
 
   // 页签切换

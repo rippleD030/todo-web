@@ -57,6 +57,10 @@
         <select id="filter-category">
           <!-- 选项将由 JavaScript 注入 -->
         </select>
+        <label style="display:flex;align-items:center;gap:4px;">
+          <input id="show-archived" type="checkbox" />
+          显示归档
+        </label>
         <button id="add-category-btn" type="button">新增分类</button>
         <button id="delete-category-btn" type="button">删除当前分类</button>
       </section>
@@ -75,11 +79,12 @@
         <h2>今日已完成任务分布</h2>
         <p id="today-done-count" class="stats-subtitle"></p>
         <canvas id="today-pie-chart"></canvas>
+        <div id="today-empty" class="stats-empty" style="display: none;">今日暂无完成任务</div>
       </section>
 
       <section class="stats-section">
         <h2>近 7 天完成任务趋势</h2>
-        <p class="stats-subtitle">按完成日期统计最近一周每天完成任务数</p>
+        <p id="last7-subtitle" class="stats-subtitle">按完成日期统计最近一周每天完成任务数</p>
         <canvas id="last7-line-chart"></canvas>
       </section>
     </section>
