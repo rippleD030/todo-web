@@ -55,7 +55,9 @@ select {
   font-size: 14px;
   outline: none;
   min-width: 0;
+  height: 34px;      /* 固定高度，保证分类下拉和其他输入框一致 */
 }
+
 
 input[type="text"]:focus,
 input[type="date"]:focus,
@@ -190,6 +192,10 @@ button {
   line-height: 1.4;
 }
 
+.search-highlight {
+  background-color: #fff59d;
+}
+
 /* 删除按钮 */
 .todo-delete-btn {
   flex-shrink: 0;
@@ -201,6 +207,26 @@ button {
   align-self: center;
   transition: background-color 0.15s ease, transform 0.05s ease;
 }
+
+/* 日期编辑面板：输入框 + 右侧上下叠放的确定/清除按钮 */
+.todo-date-editor {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.todo-date-editor-buttons {
+  display: flex;
+  flex-direction: column; /* 上下叠放 */
+  gap: 2px;
+}
+
+.todo-date-ok-btn,
+.todo-date-clear-btn {
+  font-size: 12px;
+  padding: 2px 6px;
+}
+
 
 .todo-delete-btn:hover {
   background-color: #fecaca;

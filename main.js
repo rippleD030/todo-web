@@ -2,7 +2,7 @@
 let todos = [];
 let categories = [];
 
-// 新建任务当前选中的日期（null 表示未选择任务日期）
+// 新建任务当前选中的日期（null 表示未选择日期）
 let newTodoDueDate = null;
 
 // localStorage 使用的 key（沿用原来的，兼容老数据）
@@ -11,9 +11,6 @@ const STORAGE_KEY = "todos-app-data";
 // 特殊“今日任务”虚拟分类（不会被删除）
 const TODAY_CATEGORY_ID = "today";
 const TODAY_CATEGORY_NAME = "今日任务";
-
-// 拖拽相关：记录当前拖拽的任务 id
-let draggingTodoId = null;
 
 // DOM 元素缓存
 const titleInput = document.getElementById("todo-title");
@@ -28,6 +25,18 @@ const dueDateInput = document.getElementById("todo-due-date");
 // 分类管理按钮
 const addCategoryBtn = document.getElementById("add-category-btn");
 const deleteCategoryBtn = document.getElementById("delete-category-btn");
+
+// 视图切换（列表 / 统计）相关
+const tabListBtn = document.getElementById("tab-list");
+const tabStatsBtn = document.getElementById("tab-stats");
+const viewList = document.getElementById("view-list");
+const viewStats = document.getElementById("view-stats");
+
+// 图表 canvas + 实例缓存
+const todayPieCanvas = document.getElementById("today-pie-chart");
+const last7LineCanvas = document.getElementById("last7-line-chart");
+let todayPieChart = null;
+let last7LineChart = null;
 
 /**
  * 获取今天日期字符串：YYYY-MM-DD
@@ -79,7 +88,8 @@ function createTodo(title, description, categoryId, dueDate) {
     dueDate: dueDate || null, // "YYYY-MM-DD" 或 null
     completed: false,
     createdAt: new Date().toISOString(),
-    order: maxOrder + 1 // 用于手动排序
+    completedAt: null, // 完成日期（YYYY-MM-DD），未完成为 null
+    order: maxOrder + 1 // 用于排序
   };
 }
 
@@ -111,6 +121,7 @@ function loadFromStorage() {
         completed: !!t.completed,
         createdAt: t.createdAt || new Date().toISOString(),
         dueDate: t.dueDate || null,
+        completedAt: t.completedAt || null,
         order: typeof t.order === "number" ? t.order : idx + 1
       }));
       return;
@@ -134,10 +145,8 @@ function loadFromStorage() {
       completed: !!t.completed,
       createdAt: t.createdAt || new Date().toISOString(),
       dueDate: t.dueDate || null,
-      order:
-        typeof t.order === "number"
-          ? t.order
-          : idx + 1
+      completedAt: t.completedAt || null,
+      order: typeof t.order === "number" ? t.order : idx + 1
     }));
   } catch (error) {
     console.error("Failed to parse state from storage", error);
@@ -171,7 +180,9 @@ function getVisibleTodos() {
 
   let result = todos.filter((todo) => {
     const matchKeyword =
-      !keyword || todo.title.toLowerCase().includes(keyword);
+      !keyword ||
+      (todo.title && todo.title.toLowerCase().includes(keyword)) ||
+      (todo.description && todo.description.toLowerCase().includes(keyword));
 
     let matchCategory = true;
     if (categoryFilter && categoryFilter !== "all") {
@@ -180,37 +191,27 @@ function getVisibleTodos() {
         matchCategory = todo.dueDate === todayStr;
       } else {
         // 普通分类：按 categoryId 筛
-        matchCategory =
-          String(todo.categoryId) === String(categoryFilter);
+        matchCategory = String(todo.categoryId) === String(categoryFilter);
       }
     }
 
     return matchKeyword && matchCategory;
   });
 
-  // 排序规则：
-  // 1. 未完成在前，已完成在后
-  // 2. 对未完成任务：如果都有 dueDate，则按日期早到晚
-  // 3. 然后按 order 排序（用于拖拽手动排序）
+  // 排序：未完成在前；有日期的排在前面；日期更早在前；再按创建时间
   result.sort((a, b) => {
     if (a.completed !== b.completed) {
       return a.completed ? 1 : -1;
     }
-
-    // 同为未完成任务时，优先看日期
-    if (!a.completed && !b.completed) {
-      if (a.dueDate && b.dueDate && a.dueDate !== b.dueDate) {
-        return a.dueDate.localeCompare(b.dueDate);
-      }
+    const aHas = !!a.dueDate;
+    const bHas = !!b.dueDate;
+    if (aHas !== bHas) return aHas ? -1 : 1;
+    if (aHas && bHas && a.dueDate !== b.dueDate) {
+      return a.dueDate.localeCompare(b.dueDate);
     }
-
-    const orderA = typeof a.order === "number" ? a.order : 0;
-    const orderB = typeof b.order === "number" ? b.order : 0;
-
-    if (orderA !== orderB) {
-      return orderA - orderB;
-    }
-
+    const aCreated = a.createdAt || "";
+    const bCreated = b.createdAt || "";
+    if (aCreated !== bCreated) return aCreated.localeCompare(bCreated);
     return a.id - b.id;
   });
 
@@ -218,13 +219,59 @@ function getVisibleTodos() {
 }
 
 /**
+ * 更新统计视图里“今日已完成 XX 个任务”这行文案
+ * 使用 completedAt 判断“今天完成”
+ */
+function updateTodayDoneText() {
+  const label = document.getElementById("today-done-count");
+  if (!label) return;
+
+  const todayStr = getTodayDateString();
+  const count = todos.filter(
+    (t) => t.completed && t.completedAt === todayStr
+  ).length;
+
+  label.textContent = `今日已完成 ${count} 个任务`;
+}
+
+/**
  * 根据 categoryId 获取分类名
  */
 function getCategoryNameById(categoryId) {
-  const cat = categories.find(
-    (c) => String(c.id) === String(categoryId)
-  );
+  const cat = categories.find((c) => String(c.id) === String(categoryId));
   return cat ? cat.name : "未分类";
+}
+
+/**
+ * 搜索高亮
+ */
+function applySearchHighlight(element, text) {
+  element.textContent = "";
+  const keyword = searchInput.value.trim();
+  if (!keyword) {
+    element.textContent = text || "";
+    return;
+  }
+  const src = String(text || "");
+  const lower = src.toLowerCase();
+  const kw = keyword.toLowerCase();
+  let i = 0;
+  while (true) {
+    const idx = lower.indexOf(kw, i);
+    if (idx === -1) {
+      const rest = src.slice(i);
+      if (rest) element.appendChild(document.createTextNode(rest));
+      break;
+    }
+    if (idx > i) {
+      element.appendChild(document.createTextNode(src.slice(i, idx)));
+    }
+    const hit = document.createElement("span");
+    hit.className = "search-highlight";
+    hit.textContent = src.slice(idx, idx + kw.length);
+    element.appendChild(hit);
+    i = idx + kw.length;
+  }
 }
 
 /**
@@ -283,7 +330,7 @@ function renderCategorySelects() {
 }
 
 /**
- * 将当前 todos 渲染到页面
+ * 渲染任务列表
  */
 function renderTodos() {
   todoList.innerHTML = "";
@@ -302,13 +349,6 @@ function renderTodos() {
     const li = document.createElement("li");
     li.className = "todo-item";
     li.dataset.id = String(todo.id);
-    li.draggable = true;
-
-    // 拖拽事件
-    li.addEventListener("dragstart", handleDragStart);
-    li.addEventListener("dragover", handleDragOver);
-    li.addEventListener("drop", handleDrop);
-    li.addEventListener("dragend", handleDragEnd);
 
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
@@ -325,7 +365,7 @@ function renderTodos() {
 
     const titleSpan = document.createElement("span");
     titleSpan.className = "todo-title";
-    titleSpan.textContent = todo.title;
+    applySearchHighlight(titleSpan, todo.title);
 
     const categoryTag = document.createElement("span");
     categoryTag.className = "todo-category-tag";
@@ -343,15 +383,17 @@ function renderTodos() {
     if (todo.description) {
       const descSpan = document.createElement("div");
       descSpan.className = "todo-desc";
-      descSpan.textContent = todo.description;
+      applySearchHighlight(descSpan, todo.description);
       textWrapper.appendChild(descSpan);
     }
 
-    // 任务日期：平时只显示一行文本，编辑时再出现“清除”等控件
+    // 任务日期：有日期就显示日期，没有就显示“未选择日期”
     const dueSpan = document.createElement("div");
     dueSpan.className = "todo-desc todo-due";
-    const dueText = todo.dueDate || "未选择任务日期";
-    dueSpan.textContent = `任务日期：${dueText}`;
+    const hasDate = todo.dueDate !== null && todo.dueDate !== "";
+    dueSpan.textContent = hasDate
+      ? `任务日期：${todo.dueDate}`
+      : "未选择日期";
 
     // 点击日期文本，进入编辑态（日期选择 + 清除按钮）
     dueSpan.addEventListener("click", () => {
@@ -409,6 +451,8 @@ function addTodo() {
 
   saveToStorage();
   renderTodos();
+  updateTodayDoneText();
+  renderStats();
 }
 
 /**
@@ -425,6 +469,8 @@ function deleteTodo(id) {
 
   saveToStorage();
   renderTodos();
+  updateTodayDoneText();
+  renderStats();
 }
 
 /**
@@ -437,9 +483,7 @@ function deleteCategoryById(categoryId) {
     return;
   }
 
-  const cat = categories.find(
-    (c) => String(c.id) === String(categoryId)
-  );
+  const cat = categories.find((c) => String(c.id) === String(categoryId));
   if (!cat) return;
 
   const relatedTodos = todos.filter(
@@ -451,28 +495,34 @@ function deleteCategoryById(categoryId) {
   );
   if (!ok) return;
 
-  todos = todos.filter(
-    (t) => String(t.categoryId) !== String(categoryId)
-  );
-  categories = categories.filter(
-    (c) => String(c.id) !== String(categoryId)
-  );
+  todos = todos.filter((t) => String(t.categoryId) !== String(categoryId));
+  categories = categories.filter((c) => String(c.id) !== String(categoryId));
 
   saveToStorage();
   renderCategorySelects();
   renderTodos();
+  updateTodayDoneText();
+  renderStats();
 }
 
 /**
- * 切换完成状态
- * 完成任务会自动排到列表末尾（通过排序规则实现）
+ * 切换完成状态：同时写入 / 清空 completedAt
  */
 function toggleTodo(id) {
-  todos = todos.map((todo) =>
-    todo.id === id ? { ...todo, completed: !todo.completed } : todo
-  );
+  const todayStr = getTodayDateString();
+  todos = todos.map((todo) => {
+    if (todo.id !== id) return todo;
+    const nextCompleted = !todo.completed;
+    return {
+      ...todo,
+      completed: nextCompleted,
+      completedAt: nextCompleted ? todayStr : null
+    };
+  });
   saveToStorage();
   renderTodos();
+  updateTodayDoneText();
+  renderStats();
 }
 
 /**
@@ -509,24 +559,28 @@ function editTodoCategory(id, anchorEl) {
     );
     saveToStorage();
     renderTodos();
+    renderStats();
   };
 
   select.addEventListener("change", applyChange);
   // 用户切换焦点但没改也要恢复渲染
   select.addEventListener("blur", () => {
     renderTodos();
+    renderStats();
   });
 }
 
 /**
  * 修改任务日期：点击日期文本触发
- * 弹出“小编辑区”：日期选择器 + 清除按钮
+ * 弹出“小编辑区”：日期选择器 + 清除按钮（无确定按钮）
+ * - 选择日期（change）：立即保存该日期
+ * - 点击清除：日期变为未选择
+ * - Esc：放弃修改，恢复原来的显示
  */
 function editTodoDueDate(id, anchorEl) {
   const todo = todos.find((t) => t.id === id);
   if (!todo) return;
 
-  // 容器，代替原来的文本 div
   const wrapper = document.createElement("span");
   wrapper.className = "todo-date-editor";
 
@@ -534,52 +588,59 @@ function editTodoDueDate(id, anchorEl) {
   input.type = "date";
   input.value = todo.dueDate || "";
 
-  const okBtn = document.createElement("button");
-  okBtn.type = "button";
-  okBtn.textContent = "确定";
-  okBtn.className = "todo-date-ok-btn";
-
   const clearBtn = document.createElement("button");
   clearBtn.type = "button";
   clearBtn.textContent = "清除";
   clearBtn.className = "todo-date-clear-btn";
 
-  wrapper.appendChild(input);
-  wrapper.appendChild(okBtn);
-  wrapper.appendChild(clearBtn);
+  const btnCol = document.createElement("span");
+  btnCol.className = "todo-date-editor-buttons";
+  btnCol.appendChild(clearBtn);
 
-  // 用编辑区域替换掉原来的“任务日期：xxx”文本
+  wrapper.appendChild(input);
+  wrapper.appendChild(btnCol);
+
+  // 替换原来的“任务日期：xxx”文本
   anchorEl.replaceWith(wrapper);
   input.focus();
 
-  // 点击“确定”：按当前 input 的值保存（为空则视为未选择）
-  const handleOk = () => {
+  let finished = false;
+
+  // 选了日期就立刻保存
+  const applyFromInput = () => {
+    if (finished) return;
+    finished = true;
     const newValue = input.value.trim();
     todos = todos.map((t) =>
       t.id === id ? { ...t, dueDate: newValue || null } : t
     );
     saveToStorage();
     renderTodos();
+    renderStats();
   };
 
-  // 点击“清除”：直接将日期清空为 null
+  input.addEventListener("change", applyFromInput);
+
+  // 清除：直接设为 null
   const handleClear = () => {
+    if (finished) return;
+    finished = true;
     todos = todos.map((t) =>
       t.id === id ? { ...t, dueDate: null } : t
     );
     saveToStorage();
     renderTodos();
+    renderStats();
   };
-
-  okBtn.addEventListener("click", handleOk);
   clearBtn.addEventListener("click", handleClear);
 
-  // 回车等于“确定”，Esc 等于“放弃修改”
+  // Esc：放弃修改
   input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      handleOk();
-    } else if (e.key === "Escape") {
+    if (e.key === "Escape") {
+      if (finished) return;
+      finished = true;
       renderTodos();
+      renderStats();
     }
   });
 }
@@ -638,90 +699,19 @@ function handleDeleteCurrentCategory() {
 }
 
 /**
- * 拖拽开始
- */
-function handleDragStart(event) {
-  const li = event.currentTarget;
-  draggingTodoId = Number(li.dataset.id);
-  event.dataTransfer.effectAllowed = "move";
-}
-
-/**
- * 拖拽经过，必须阻止默认行为才能触发 drop
- */
-function handleDragOver(event) {
-  event.preventDefault();
-  event.dataTransfer.dropEffect = "move";
-}
-
-/**
- * 拖拽放下
- */
-function handleDrop(event) {
-  event.preventDefault();
-  const targetLi = event.currentTarget;
-  const targetId = Number(targetLi.dataset.id);
-
-  if (!draggingTodoId || draggingTodoId === targetId) {
-    return;
-  }
-
-  reorderTodos(draggingTodoId, targetId);
-  draggingTodoId = null;
-}
-
-/**
- * 拖拽结束
- */
-function handleDragEnd() {
-  draggingTodoId = null;
-}
-
-/**
- * 在当前可见列表中调整任务顺序
- * 只允许同一完成状态之间的拖拽
- */
-function reorderTodos(sourceId, targetId) {
-  const visible = getVisibleTodos();
-  const source = visible.find((t) => t.id === sourceId);
-  const target = visible.find((t) => t.id === targetId);
-  if (!source || !target) return;
-
-  // 已完成与未完成之间不允许调整顺序（已完成必须在列表末尾）
-  if (source.completed !== target.completed) {
-    return;
-  }
-
-  const sourceIndex = visible.indexOf(source);
-  const targetIndex = visible.indexOf(target);
-  if (sourceIndex === -1 || targetIndex === -1) return;
-
-  visible.splice(sourceIndex, 1);
-  visible.splice(targetIndex, 0, source);
-
-  // 按新顺序更新 order
-  visible.forEach((todo, index) => {
-    const idx = todos.findIndex((t) => t.id === todo.id);
-    if (idx !== -1) {
-      todos[idx].order = index + 1;
-    }
-  });
-
-  saveToStorage();
-  renderTodos();
-}
-
-/**
  * 更新创建任务区域的日期显示：根据 newTodoDueDate
  */
 function updateCreateDueDateDisplay() {
   if (!dueDateInput) return;
-  const text = newTodoDueDate || "未选择任务日期";
+  const text = newTodoDueDate || "未选择日期";
   dueDateInput.value = text;
 }
 
 /**
- * 打开创建任务区域的日期编辑面板
+ * 打开创建任务区域的日期编辑面板（无确定按钮，只有清除）
+ * - 选日期（change）：自动保存并退出
+ * - 点击清除：设为未选择并退出
+ * - Esc：放弃修改并退出
  */
 function openCreateDueDateEditor() {
   if (!dueDateInput) return;
@@ -733,50 +723,204 @@ function openCreateDueDateEditor() {
   input.type = "date";
   input.value = newTodoDueDate || "";
 
-  const okBtn = document.createElement("button");
-  okBtn.type = "button";
-  okBtn.textContent = "确定";
-  okBtn.className = "todo-date-ok-btn";
-
   const clearBtn = document.createElement("button");
   clearBtn.type = "button";
   clearBtn.textContent = "清除";
   clearBtn.className = "todo-date-clear-btn";
 
-  wrapper.appendChild(input);
-  wrapper.appendChild(okBtn);
-  wrapper.appendChild(clearBtn);
+  const btnCol = document.createElement("span");
+  btnCol.className = "todo-date-editor-buttons";
+  btnCol.appendChild(clearBtn);
 
-  // 用编辑区域替换掉原来的输入框
+  wrapper.appendChild(input);
+  wrapper.appendChild(btnCol);
+
+  // 用编辑区域替换掉原来的显示输入框
   dueDateInput.replaceWith(wrapper);
   input.focus();
+
+  let finished = false;
 
   const finish = () => {
     wrapper.replaceWith(dueDateInput);
     updateCreateDueDateDisplay();
   };
 
-  const handleOk = () => {
+  // 选日期：自动保存并结束
+  const applyFromInput = () => {
+    if (finished) return;
+    finished = true;
     const v = input.value.trim();
     newTodoDueDate = v || null;
     finish();
   };
 
+  input.addEventListener("change", applyFromInput);
+
+  // 清除：设为未选择
   const handleClear = () => {
+    if (finished) return;
+    finished = true;
     newTodoDueDate = null;
     finish();
   };
-
-  okBtn.addEventListener("click", handleOk);
   clearBtn.addEventListener("click", handleClear);
 
+  // Esc：放弃修改
   input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      handleOk();
-    } else if (e.key === "Escape") {
-      finish(); // 放弃修改，恢复原显示
+    if (e.key === "Escape") {
+      if (finished) return;
+      finished = true;
+      finish();
     }
   });
+}
+
+/**
+ * 今日完成任务统计（按分类）
+ */
+function getTodayCompletedStats() {
+  const todayStr = getTodayDateString();
+  const map = new Map(); // key: 分类名, value: 数量
+
+  todos.forEach((t) => {
+    if (!t.completed) return;
+    if (t.completedAt !== todayStr) return;
+    const name = getCategoryNameById(t.categoryId);
+    map.set(name, (map.get(name) || 0) + 1);
+  });
+
+  const labels = [];
+  const data = [];
+  map.forEach((value, key) => {
+    labels.push(key);
+    data.push(value);
+  });
+
+  return { labels, data };
+}
+
+/**
+ * 近 7 天完成任务统计
+ */
+function getLast7DaysCompletedStats() {
+  const labels = [];
+  const data = [];
+
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+
+    const count = todos.filter(
+      (t) => t.completed && t.completedAt === dateStr
+    ).length;
+
+    labels.push(`${mm}-${dd}`);
+    data.push(count);
+  }
+
+  return { labels, data };
+}
+
+/**
+ * 渲染统计视图：饼图 + 折线图
+ */
+function renderStats() {
+  if (!todayPieCanvas || !last7LineCanvas || typeof Chart === "undefined") {
+    return;
+  }
+
+  // 先更新“今日已完成 XX 个任务”这行
+  updateTodayDoneText();
+
+  const todayCtx = todayPieCanvas.getContext("2d");
+  const last7Ctx = last7LineCanvas.getContext("2d");
+
+  const todayStats = getTodayCompletedStats();
+  const last7Stats = getLast7DaysCompletedStats();
+
+  // 清除旧图表实例
+  if (todayPieChart) todayPieChart.destroy();
+  if (last7LineChart) last7LineChart.destroy();
+
+  // 今日完成饼图
+  todayPieChart = new Chart(todayCtx, {
+    type: "pie",
+    data: {
+      labels: todayStats.labels.length ? todayStats.labels : ["无数据"],
+      datasets: [
+        {
+          data: todayStats.data.length ? todayStats.data : [1]
+        }
+      ]
+    },
+    options: {
+      plugins: {
+        legend: {
+          position: "bottom"
+        },
+        title: {
+          display: todayStats.labels.length === 0,
+          text: "今日没有完成任何任务"
+        }
+      }
+    }
+  });
+
+  // 近 7 天折线图
+  last7LineChart = new Chart(last7Ctx, {
+    type: "line",
+    data: {
+      labels: last7Stats.labels,
+      datasets: [
+        {
+          label: "完成任务数",
+          data: last7Stats.data,
+          fill: false,
+          tension: 0.2
+        }
+      ]
+    },
+    options: {
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            precision: 0
+          }
+        }
+      }
+    }
+  });
+}
+
+/**
+ * 视图切换：列表 / 统计
+ */
+function switchView(view) {
+  if (!viewList || !viewStats) return;
+
+  if (view === "stats") {
+    viewList.style.display = "none";
+    viewStats.style.display = "";
+    if (tabListBtn && tabStatsBtn) {
+      tabListBtn.classList.remove("tab-active");
+      tabStatsBtn.classList.add("tab-active");
+    }
+    renderStats();
+  } else {
+    viewList.style.display = "";
+    viewStats.style.display = "none";
+    if (tabListBtn && tabStatsBtn) {
+      tabListBtn.classList.add("tab-active");
+      tabStatsBtn.classList.remove("tab-active");
+    }
+    renderTodos();
+  }
 }
 
 /**
@@ -812,6 +956,14 @@ function bindEvents() {
     updateCreateDueDateDisplay();
     dueDateInput.addEventListener("click", openCreateDueDateEditor);
   }
+
+  // 页签切换
+  if (tabListBtn) {
+    tabListBtn.addEventListener("click", () => switchView("list"));
+  }
+  if (tabStatsBtn) {
+    tabStatsBtn.addEventListener("click", () => switchView("stats"));
+  }
 }
 
 /**
@@ -822,6 +974,9 @@ function init() {
   renderCategorySelects();
   bindEvents();
   renderTodos();
+  updateTodayDoneText();
+  // 默认展示列表视图
+  switchView("list");
 }
 
 init();

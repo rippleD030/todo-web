@@ -9,54 +9,84 @@
   <main class="container">
     <h1>TODO List</h1>
 
-    <!-- 添加任务表单 -->
-    <section class="todo-form">
-      <input
-        id="todo-title"
-        type="text"
-        placeholder="输入待办标题（必填）"
-      />
-      <input
-        id="todo-desc"
-        type="text"
-        placeholder="描述（可选）"
-      />
-      <!-- 新增：到期日期 -->
-      <input
-        id="todo-due-date"
-        type="text"
-        placeholder="任务日期（可选）"
-      />
-      <!-- 分类下拉，选项由 JS 根据 categories 动态渲染 -->
-      <select id="todo-category">
-        <!-- 选项将由 JavaScript 注入 -->
-      </select>
-      <button id="add-btn">添加</button>
+    <!-- 页签切换 -->
+    <div class="tabs">
+      <button id="tab-list" type="button" class="tab-button tab-active">
+        列表
+      </button>
+      <button id="tab-stats" type="button" class="tab-button">
+        统计
+      </button>
+    </div>
+
+    <!-- 列表视图 -->
+    <section id="view-list">
+      <!-- 添加任务表单 -->
+      <section class="todo-form">
+        <input
+          id="todo-title"
+          type="text"
+          placeholder="输入待办标题（必填）"
+        />
+        <input
+          id="todo-desc"
+          type="text"
+          placeholder="描述（可选）"
+        />
+        <!-- 任务日期显示控件（实际选择在弹出面板里完成） -->
+        <input
+          id="todo-due-date"
+          type="text"
+          placeholder="任务日期（可选）"
+        />
+        <!-- 分类下拉，选项由 JS 根据 categories 动态渲染 -->
+        <select id="todo-category">
+          <!-- 选项将由 JavaScript 注入 -->
+        </select>
+        <button id="add-btn" type="button">添加</button>
+      </section>
+
+      <!-- 工具栏：搜索 + 分类筛选 + 分类管理 -->
+      <section class="toolbar">
+        <input
+          id="search-input"
+          type="text"
+          placeholder="搜索标题或描述关键字"
+        />
+        <!-- 分类筛选下拉，选项由 JS 动态渲染（包含“全部分类”/“今日任务”等） -->
+        <select id="filter-category">
+          <!-- 选项将由 JavaScript 注入 -->
+        </select>
+        <button id="add-category-btn" type="button">新增分类</button>
+        <button id="delete-category-btn" type="button">删除当前分类</button>
+      </section>
+
+      <!-- 待办列表 -->
+      <section>
+        <ul id="todo-list">
+          <!-- 待办项将由 JS 注入 -->
+        </ul>
+      </section>
     </section>
 
-    <!-- 工具栏：搜索 + 分类筛选 + 分类管理 -->
-    <section class="toolbar">
-      <input
-        id="search-input"
-        type="text"
-        placeholder="搜索标题关键字"
-      />
-      <!-- 分类筛选下拉，选项由 JS 动态渲染（包含“全部分类”） -->
-      <select id="filter-category">
-        <!-- 选项将由 JavaScript 注入 -->
-      </select>
-      <button id="add-category-btn" type="button">新增分类</button>
-      <button id="delete-category-btn" type="button">删除当前分类</button>
-    </section>
+    <!-- 统计视图 -->
+    <section id="view-stats" style="display: none;">
+      <section class="stats-section">
+        <h2>今日已完成任务分布</h2>
+        <p id="today-done-count" class="stats-subtitle"></p>
+        <canvas id="today-pie-chart"></canvas>
+      </section>
 
-    <!-- 待办列表 -->
-    <section>
-      <ul id="todo-list">
-        <!-- 待办项将由 JS 注入 -->
-      </ul>
+      <section class="stats-section">
+        <h2>近 7 天完成任务趋势</h2>
+        <p class="stats-subtitle">按完成日期统计最近一周每天完成任务数</p>
+        <canvas id="last7-line-chart"></canvas>
+      </section>
     </section>
   </main>
 
+  <!-- Chart.js（必须在 main.js 之前引入） -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="main.js"></script>
 </body>
 </html>
